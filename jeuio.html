@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grid Conquest V45 - MULTIPLAYER PRO</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --primary: #3498db;
+            --secondary: #e74c3c;
+            --bg: #1a1a1a;
+            --panel: #2c3e50;
+            --accent: #f1c40f;
+        }
+        body { 
+            background: var(--bg); color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; 
+        }
+
+        /* --- UI TOP BAR --- */
+        #network-ui { 
+            background: #000; width: 100%; padding: 8px; display: flex; 
+            justify-content: center; gap: 25px; font-size: 0.85rem; border-bottom: 2px solid var(--accent); 
+        }
+        #ui { 
+            padding: 12px; background: var(--panel); width: 100%; display: flex; 
+            justify-content: space-around; align-items: center; border-bottom: 3px solid #34495e; 
+        }
+        .stat { 
+            font-size: 1rem; font-weight: bold; background: rgba(0,0,0,0.4); 
+            padding: 6px 18px; border-radius: 6px; border: 1px solid #444; min-width: 120px;
+        }
+
+        /* --- INDICATORS --- */
+        #timer-ui { 
+            position: absolute; top: 110px; background: rgba(231, 76, 60, 0.9); 
+            padding: 12px 25px; border-radius: 30px; font-weight: bold; z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .mode-indicator { 
+            padding: 8px 15px; border-radius: 5px; font-weight: bold; opacity: 0.2; 
+            border: 2px solid transparent; transition: 0.3s;
+        }
+        .active-f { color: var(--primary); border-color: var(--primary); background: rgba(52, 152, 219, 0.2); opacity: 1; }
+        .active-k { color: var(--secondary); border-color: var(--secondary); background: rgba(231, 76, 60, 0.2); opacity: 1; }
+
+        /* --- GAME AREA --- */
+        #game-container { position: relative; width: 100vw; height: calc(100vh - 110px); overflow: hidden; }
+        canvas { background-color: #111; display: block; cursor: crosshair; }
+
+        /* --- FLOATING PANELS --- */
+        .floating-panel {
+            position: absolute; display: none; background: rgba(0, 0, 0, 0.92);
+            border: 2px solid var(--accent); padding: 15px; border-radius: 10px; 
+            z-index: 1001; min-width: 220px; box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        .menu-btn { 
+            background: #34495e; color: white; border: none; padding: 10px; 
+            margin: 5px 0; border-radius: 5px; cursor: pointer; width: 100%; 
+            font-size: 0.8rem; font-weight: bold; transition: 0.2s;
+        }
+        .menu-btn:hover { background: #4e6a85; }
+
+        #radial-menu { 
+            position: absolute; display: none; flex-direction: column; gap: 10px; 
+            background: rgba(44, 62, 80, 0.98); padding: 20px; border-radius: 20px; 
+            border: 3px solid var(--accent); z-index: 1000; transform: translate(-50%, -50%);
+        }
+        .build-option { 
+            cursor: pointer; padding: 12px; border-radius: 12px; 
+            background: rgba(255,255,255,0.05); text-align: center; font-size: 0.75rem; width: 85px;
+            border: 1px solid transparent;
+        }
+        .build-option:hover { background: rgba(255,255,255,0.15); border-color: var(--accent); }
+
+        /* --- LOG & CHAT --- */
+        #activity-log {
+            position: absolute; bottom: 20px; left: 20px; width: 250px; height: 150px;
+            background: rgba(0,0,0,0.7); border-radius: 8px; padding: 10px;
+            font-size: 0.75rem; overflow-y: auto; pointer-events: none; border: 1px solid #444;
+        }
+        #chat-box {
+            position: absolute; bottom: 20px; right: 20px; width: 250px;
+            background: rgba(0,0,0,0.8); border-radius: 8px; padding: 5px; border: 1px solid var(--primary);
+        }
+        #chat-input { background: #000; color: white; border: none; width: 90%; padding: 5px; }
+
+        #target-msg {
+            position: absolute; bottom: 180px; left: 50%; transform: translateX(-50%);
+            background: var(--secondary); padding: 10px 30px; border-radius: 5px; 
+            display: none; z-index: 2000; animation: blink 1s infinite;
+        }
+        @keyframes blink { 50% { opacity: 0.5; } }
+        
+        input { background: #222; color: white; border: 1px solid var(--accent); padding: 5px; border-radius: 4px; }
+        button { background: var(--accent); border: none; padding: 5px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="network-ui">
+    <div><b>STATUT:</b> <span id="status" style="color:var(--accent)">DÉCONNECTÉ</span></div>
+    <div><b>MON ID:</b> <code id="my-id">Chargement...</code></div>
+    <div>
+        <input type="text" id="peer-id-input" placeholder="Coller l'ID de l'ami">
+        <button onclick="connectToPeer()">REJOINDRE</button>
+    </div>
+</div>
+
+<div id="ui">
+    <div class="stat">💰 <span id="money">5000</span> $</div>
+    <div class="stat">🪵 <span id="wood">0</span></div>
+    <div class="stat">💎 <span id="stone">0</span></div>
+    <div id="ui-f" class="mode-indicator">🟦 ACHAT (F)</div>
+    <div id="ui-k" class="mode-indicator">🟥 ATTAQUE (K)</div>
+</div>
+
+<div id="timer-ui">EN ATTENTE DE CONNEXION...</div>
+<div id="target-msg">🎯 ARTILLERIE PRÊTE : CLIQUEZ SUR UNE CIBLE</div>
+
+<div id="game-container">
+    <div id="activity-log"></div>
+    <div id="chat-box">
+        <div id="chat-messages" style="height:100px; overflow-y:auto; font-size:0.7rem; margin-bottom:5px"></div>
+        <input type="text" id="chat-input" placeholder="Message + Entrée...">
+    </div>
+
+    <div id="inspector" class="floating-panel"></div>
+    
+    <div id="market-ui" class="floating-panel">
+        <h3 style="margin:0 0 10px 0; color:var(--accent); text-align:center">🏪 Marché Mondial</h3>
+        <button class="menu-btn" onclick="trade('buy_wood_50')">🛒 Acheter 50 Bois (50$)</button>
+        <button class="menu-btn" onclick="trade('buy_wood_500')">📦 Acheter 500 Bois (500$)</button>
+        <hr style="border:0; border-top:1px solid #444">
+        <button class="menu-btn" style="background:#e67e22" onclick="trade('sell_wood_50')">💰 Vendre 50 Bois (25$)</button>
+        <button class="menu-btn" style="background:#d35400" onclick="trade('sell_wood_500')">🏦 Gros Vente Bois (250$)</button>
+        <hr style="border:0; border-top:1px solid #444">
+        <button class="menu-btn" style="background:#95a5a6" onclick="trade('sell_stone_1')">💎 Vendre 1 Pierre (50$)</button>
+        <button class="menu-btn" style="background:#7f8c8d" onclick="trade('sell_stone_50')">🏛️ Gros Vente Pierre (5000$)</button>
+    </div>
+
+    <div id="launcher-ui" class="floating-panel">
+        <h3 style="margin:0 0 10px 0; color:var(--secondary); text-align:center">🚀 Centre de Tir</h3>
+        <button class="menu-btn" onclick="prepareShot('bombe')">💣 Charger BOMBE (1000$)</button>
+        <button class="menu-btn" onclick="prepareShot('poison')">🧪 Charger POISON (2000$)</button>
+    </div>
+
+    <div id="radial-menu">
+        <div style="display:flex; gap:12px">
+            <div class="build-option" onclick="selectBuild(1)">🧱<br>MUR<br>60 Bois</div>
+            <div class="build-option" onclick="selectBuild(2)">🏪<br>MARCHÉ<br>500$</div>
+            <div class="build-option" onclick="selectBuild(4)">📡<br>STRATÈGE<br>500$/500B</div>
+            <div class="build-option" onclick="selectBuild(5)">🚀<br>LAUNCHER<br>1K$/500B/50P</div>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+</div>
+
+<script>
+    /* --- CONFIGURATION GLOBALE --- */
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gridW = 120, gridH = 100, baseCellSize = 18;
+    
+    let peer = new Peer();
+    let conn = null;
+    let myId = 1; 
+    let gameStarted = false;
+    let placed = false;
+    let money = 5000, wood = 0, stone = 0;
+    let scale = 0.6, offsetX = 0, offsetY = 0;
+    let mouseX = 0, mouseY = 0;
+    let buyMode = false, attackMode = false, buildMode = false, selectedBuild = 0, shotType = null;
+    const activeKeys = {};
+
+    // Données de la grille
+    let cells = Array.from({length: gridH}, () => new Array(gridW).fill(0));
+    let terrain = Array.from({length: gridH}, () => new Array(gridW).fill(0));
+    let walls = Array.from({length: gridH}, () => new Array(gridW).fill(false));
+    let markets = Array.from({length: gridH}, () => new Array(gridW).fill(false));
+    let launchers = Array.from({length: gridH}, () => new Array(gridW).fill(false));
+    let strategists = Array.from({length: gridH}, () => new Array(gridW).fill(-1));
+    let defenseBonus = Array.from({length: gridH}, () => new Array(gridW).fill(0));
+    let activePoisons = [];
+
+    /* --- GESTION RÉSEAU --- */
+    peer.on('open', id => { document.getElementById('my-id').innerText = id; });
+
+    peer.on('connection', c => {
+        if(conn) return; // Un seul ami à la fois
+        conn = c; myId = 1;
+        initNetwork();
+        log("Un ami a rejoint la partie !");
+        // L'hôte génère et synchronise
+        generateMap();
+        setTimeout(() => send('sync_map', { cells, terrain }), 1500);
+    });
+
+    function connectToPeer() {
+        let id = document.getElementById('peer-id-input').value;
+        if(!id) return;
+        conn = peer.connect(id);
+        myId = 2;
+        initNetwork();
+    }
+
+    function initNetwork() {
+        document.getElementById('status').innerText = "CONNECTÉ";
+        document.getElementById('timer-ui').innerText = "CLIQUEZ SUR LA CARTE POUR VOTRE CAPITALE";
+        gameStarted = true;
+        
+        conn.on('data', data => {
+            switch(data.type) {
+                case 'sync_map': 
+                    cells = data.payload.cells; 
+                    terrain = data.payload.terrain; 
+                    break;
+                case 'action': 
+                    applyRemoteAction(data.payload); 
+                    break;
+                case 'chat':
+                    addChatMessage(data.payload.sender, data.payload.txt);
+                    break;
+            }
+        });
+    }
+
+    function send(type, payload) { if(conn) conn.send({type, payload}); }
+
+    /* --- LOGIQUE DE JEU --- */
+    function generateMap() {
+        // Forêts (1)
+        for(let i=0; i<40; i++) fillCircle(Math.random()*gridW, Math.random()*gridH, 2+Math.random()*3, 1);
+        // Pierres (2)
+        for(let i=0; i<15; i++) fillCircle(Math.random()*gridW, Math.random()*gridH, 1+Math.random()*2, 2);
+    }
+
+    function fillCircle(cx, cy, r, type) {
+        for(let y=Math.floor(cy-r); y<=cy+r; y++) {
+            for(let x=Math.floor(cx-r); x<=cx+r; x++) {
+                if(y>=0 && y<gridH && x>=0 && x<gridW && Math.sqrt((x-cx)**2 + (y-cy)**2) <= r) {
+                    terrain[y][x] = type;
+                }
+            }
+        }
+    }
+
+    function applyRemoteAction(p) {
+        const {x, y, op, val} = p;
+        if(op === 'buy') cells[y][x] = p.pid;
+        if(op === 'attack') { cells[y][x] = p.pid; walls[y][x] = false; }
+        if(op === 'build_wall') walls[y][x] = true;
+        if(op === 'build_market') { for(let i=0;i<3;i++)for(let j=0;j<3;j++) markets[y+i][x+j]=true; }
+        if(op === 'build_strat') { for(let i=0;i<2;i++)for(let j=0;j<2;j++) strategists[y+i][x+j]=0; updateDefense(); }
+        if(op === 'build_launch') { for(let i=0;i<2;i++)for(let j=0;j<2;j++) launchers[y+i][x+j]=true; }
+        if(op === 'boost_strat') { strategists[y][x] += 10; updateDefense(); }
+        if(op === 'bombe') executeBombe(x, y, false);
+        if(op === 'poison') executePoison(x, y, false);
+    }
+
+    // Boucle de ressources (1s)
+    setInterval(() => {
+        if(!gameStarted || !placed) return;
+        let inc = 0;
+        for(let y=0; y<gridH; y++) {
+            for(let x=0; x<gridW; x++) {
+                if(cells[y][x] === myId) {
+                    if(terrain[y][x] === 1) wood += 0.4;
+                    else if(terrain[y][x] === 2) stone += 0.08;
+                    else inc += 0.25;
+                }
+            }
+        }
+        money += inc;
+        updateUI();
+    }, 1000);
+
+    // Boucle Poison (20s)
+    setInterval(() => {
+        activePoisons.forEach((p, index) => {
+            if(p.wave < 4) {
+                let next = [];
+                p.tiles.forEach(t => {
+                    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx,dy]) => {
+                        let nx=t.x+dx, ny=t.y+dy;
+                        if(nx>=0 && nx<gridW && ny>=0 && ny<gridH) {
+                            cells[ny][nx] = 0; walls[ny][nx] = false; markets[ny][nx] = false;
+                            launchers[ny][nx] = false; strategists[ny][nx] = -1;
+                            next.push({x:nx, y:ny});
+                        }
+                    });
+                });
+                p.tiles = next; p.wave++;
+            } else activePoisons.splice(index, 1);
+        });
+        updateDefense();
+    }, 20000);
+
+    /* --- ACTIONS JOUEUR --- */
+    canvas.addEventListener('mousedown', e => {
+        if(!gameStarted) return;
+        const p = getGridPos(e.clientX, e.clientY);
+        if(p.x < 0 || p.x >= gridW || p.y < 0 || p.y >= gridH) return;
+
+        if(!placed) {
+            for(let i=-1; i<=1; i++) for(let j=-1; j<=1; j++) {
+                cells[p.y+i][p.x+j] = myId;
+            }
+            placed = true;
+            document.getElementById('timer-ui').style.display = 'none';
+            send('action', {x:p.x, y:p.y, op:'buy', pid:myId});
+            return;
+        }
+
+        if(shotType) {
+            if(shotType === 'bombe') executeBombe(p.x, p.y, true);
+            else executePoison(p.x, p.y, true);
+            shotType = null;
+            document.getElementById('target-msg').style.display = 'none';
+            return;
+        }
+
+        if(buildMode) {
+            handleBuilding(p.x, p.y);
+        } else {
+            handleInteraction(p.x, p.y);
+        }
+    });
+
+    function handleInteraction(x, y) {
+        let price = 50 + defenseBonus[y][x];
+        let isAdj = false;
+        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dx,dy]) => {
+            if(cells[y+dy] && cells[y+dy][x+dx] === myId) isAdj = true;
+        });
+
+        if(buyMode && cells[y][x] === 0 && money >= price && isAdj) {
+            money -= price; cells[y][x] = myId;
+            send('action', {x, y, op:'buy', pid:myId});
+        } else if(attackMode && cells[y][x] != 0 && cells[y][x] != myId && money >= price && isAdj) {
+            money -= price; cells[y][x] = myId; walls[y][x] = false;
+            send('action', {x, y, op:'attack', pid:myId});
+        }
+    }
+
+    function handleBuilding(x, y) {
+        if(selectedBuild === 1 && wood >= 60 && cells[y][x] === myId) {
+            wood -= 60; walls[y][x] = true; send('action', {x, y, op:'build_wall'});
+        }
+        if(selectedBuild === 2 && money >= 500) {
+            if(checkArea(x, y, 3, 3)) {
+                money -= 500; for(let i=0;i<3;i++)for(let j=0;j<3;j++) markets[y+i][x+j]=true;
+                send('action', {x, y, op:'build_market'});
+            }
+        }
+        if(selectedBuild === 4 && money >= 500 && wood >= 500) {
+            if(checkArea(x, y, 2, 2)) {
+                money -= 500; wood -= 500;
+                for(let i=0;i<2;i++)for(let j=0;j<2;j++) strategists[y+i][x+j]=0;
+                updateDefense(); send('action', {x, y, op:'build_strat'});
+            }
+        }
+        if(selectedBuild === 5 && money >= 1000 && wood >= 500 && stone >= 50) {
+            if(checkArea(x, y, 2, 2)) {
+                money -= 1000; wood -= 500; stone -= 50;
+                for(let i=0;i<2;i++)for(let j=0;j<2;j++) launchers[y+i][x+j]=true;
+                send('action', {x, y, op:'build_launch'});
+            }
+        }
+        buildMode = false; selectedBuild = 0;
+    }
+
+    function checkArea(x, y, w, h) {
+        for(let i=0; i<h; i++) for(let j=0; j<w; j++) {
+            if(!cells[y+i] || cells[y+i][x+j] !== myId || walls[y+i][x+j]) return false;
+        }
+        return true;
+    }
+
+    function executeBombe(tx, ty, isLocal) {
+        if(isLocal) { money -= 1000; send('action', {x:tx, y:ty, op:'bombe'}); log("BOMBE LÂCHÉE !"); }
+        for(let y=ty-4; y<=ty+4; y++) {
+            for(let x=tx-4; x<=tx+4; x++) {
+                if(x>=0 && x<gridW && y>=0 && y<gridH && Math.sqrt((x-tx)**2 + (y-ty)**2) <= 4) {
+                    cells[y][x] = 0; walls[y][x] = false; markets[y][x] = false;
+                    launchers[y][x] = false; strategists[y][x] = -1;
+                }
+            }
+        }
+        updateDefense();
+    }
+
+    function executePoison(tx, ty, isLocal) {
+        if(isLocal) { money -= 2000; send('action', {x:tx, y:ty, op:'poison'}); log("GAZ TOXIQUE DÉPLOYÉ !"); }
+        activePoisons.push({ x: tx, y: ty, wave: 0, tiles: [{x:tx, y:ty}] });
+        cells[ty][tx] = 0;
+    }
+
+    /* --- RENDU --- */
+    function draw() {
+        moveCamera();
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+
+        for(let y=0; y<gridH; y++) {
+            for(let x=0; x<gridW; x++) {
+                let owner = cells[y][x];
+                ctx.fillStyle = owner === 1 ? "#3498db" : (owner === 2 ? "#e74c3c" : "#222");
+                ctx.fillRect(x*baseCellSize, y*baseCellSize, baseCellSize-0.5, baseCellSize-0.5);
+
+                // Terrain
+                ctx.font = "10px Arial"; ctx.textAlign = "center";
+                if(terrain[y][x] === 1) ctx.fillText("🌲", x*baseCellSize+9, y*baseCellSize+13);
+                if(terrain[y][x] === 2) ctx.fillText("🪨", x*baseCellSize+9, y*baseCellSize+13);
+                
+                // Bâtiments
+                if(walls[y][x]) ctx.fillText("🧱", x*baseCellSize+9, y*baseCellSize+13);
+                if(markets[y][x]) { ctx.fillStyle="rgba(241,196,15,0.2)"; ctx.fillRect(x*baseCellSize, y*baseCellSize, baseCellSize, baseCellSize); }
+                if(launchers[y][x]) ctx.fillText("🚀", x*baseCellSize+9, y*baseCellSize+13);
+                if(strategists[y][x] >= 0) { ctx.fillStyle="rgba(155,89,182,0.3)"; ctx.fillRect(x*baseCellSize, y*baseCellSize, baseCellSize, baseCellSize); }
+            }
+        }
+
+        // Effet Poison
+        activePoisons.forEach(p => {
+            ctx.fillStyle = "rgba(46, 204, 113, 0.4)";
+            p.tiles.forEach(t => ctx.fillRect(t.x*baseCellSize, t.y*baseCellSize, baseCellSize, baseCellSize));
+        });
+
+        // Curseur de build
+        if(buildMode && selectedBuild > 0) {
+            let p = getGridPos(mouseX, mouseY);
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            let size = (selectedBuild === 2) ? 3 : (selectedBuild === 4 || selectedBuild === 5) ? 2 : 1;
+            ctx.fillRect(p.x*baseCellSize, p.y*baseCellSize, size*baseCellSize, size*baseCellSize);
+        }
+
+        ctx.restore();
+        requestAnimationFrame(draw);
+    }
+
+    /* --- UTILITAIRES --- */
+    function moveCamera() {
+        let spd = 12 / scale;
+        if(activeKeys['z'] || activeKeys['w']) offsetY += spd;
+        if(activeKeys['s']) offsetY -= spd;
+        if(activeKeys['q'] || activeKeys['a']) offsetX += spd;
+        if(activeKeys['d']) offsetX -= spd;
+    }
+
+    function updateDefense() {
+        for(let y=0; y<gridH; y++) defenseBonus[y].fill(0);
+        for(let y=0; y<gridH; y++) for(let x=0; x<gridW; x++) {
+            if(strategists[y][x] >= 0) {
+                let val = strategists[y][x];
+                for(let dy=-10; dy<=10; dy++) for(let dx=-10; dx<=10; dx++) {
+                    let nx=x+dx, ny=y+dy;
+                    if(nx>=0 && nx<gridW && ny>=0 && ny<gridH && Math.sqrt(dx*dx+dy*dy)<=10) defenseBonus[ny][nx]+=val;
+                }
+            }
+        }
+    }
+
+    function getGridPos(cx, cy) {
+        return {
+            x: Math.floor(((cx - offsetX) / scale) / baseCellSize),
+            y: Math.floor(((cy - 110 - offsetY) / scale) / baseCellSize)
+        };
+    }
+
+    function updateUI() {
+        document.getElementById('money').innerText = Math.floor(money);
+        document.getElementById('wood').innerText = Math.floor(wood);
+        document.getElementById('stone').innerText = stone.toFixed(1);
+    }
+
+    function log(msg) {
+        const div = document.createElement('div');
+        div.innerText = `> ${msg}`;
+        const logBox = document.getElementById('activity-log');
+        logBox.appendChild(div); logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // Chat
+    document.getElementById('chat-input').addEventListener('keypress', e => {
+        if(e.key === 'Enter') {
+            let txt = e.target.value;
+            if(!txt) return;
+            addChatMessage("Moi", txt);
+            send('chat', {sender: "Ami", txt: txt});
+            e.target.value = "";
+        }
+    });
+
+    function addChatMessage(sender, txt) {
+        const msg = document.createElement('div');
+        msg.innerHTML = `<b>${sender}:</b> ${txt}`;
+        const box = document.getElementById('chat-messages');
+        box.appendChild(msg); box.scrollTop = box.scrollHeight;
+    }
+
+    // Windows / UI Events
+    window.addEventListener('keydown', e => {
+        let k = e.key.toLowerCase(); activeKeys[k] = true;
+        if(k==='f') { buyMode = !buyMode; attackMode = false; }
+        if(k==='k') { attackMode = !attackMode; buyMode = false; }
+        if(k==='b') { buildMode = !buildMode; radialMenu.style.display = buildMode ? 'flex' : 'none'; }
+        document.getElementById('ui-f').className = "mode-indicator " + (buyMode?"active-f":"");
+        document.getElementById('ui-k').className = "mode-indicator " + (attackMode?"active-k":"");
+    });
+    window.addEventListener('keyup', e => activeKeys[e.key.toLowerCase()] = false);
+    canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+    window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight-110; });
+
+    canvas.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const p = getGridPos(e.clientX, e.clientY);
+        if(cells[p.y][p.x] === myId) {
+            if(markets[p.y][p.x]) showPanel('market-ui', e);
+            else if(launchers[p.y][p.x]) showPanel('launcher-ui', e);
+            else if(strategists[p.y][p.x] >= 0) showStratPanel(p.x, p.y, e);
+        }
+    });
+
+    function showPanel(id, e) {
+        document.querySelectorAll('.floating-panel').forEach(p => p.style.display = 'none');
+        let el = document.getElementById(id);
+        el.style.display = 'block'; el.style.left = e.clientX + 'px'; el.style.top = e.clientY + 'px';
+    }
+
+    function showStratPanel(x, y, e) {
+        let el = document.getElementById('inspector');
+        el.innerHTML = `<h4>📡 Stratège</h4><button class="menu-btn" onclick="boostStrat(${x},${y})">Fortifier (+10 DEF) - 500$</button>`;
+        showPanel('inspector', e);
+    }
+
+    window.boostStrat = (x, y) => {
+        if(money >= 500) { money -= 500; strategists[y][x] += 10; updateDefense(); send('action', {x, y, op:'boost_strat'}); }
+        document.getElementById('inspector').style.display = 'none';
+    };
+
+    window.trade = t => {
+        if(t==='buy_wood_50' && money >= 50) { money -= 50; wood += 50; }
+        if(t==='sell_stone_50' && stone >= 50) { stone -= 50; money += 5000; }
+        // Ajoutez les autres trades ici sur le même modèle
+    };
+
+    window.selectBuild = id => { selectedBuild = id; buildMode = true; radialMenu.style.display = 'none'; };
+    window.prepareShot = type => { shotType = type; document.getElementById('target-msg').style.display = 'block'; document.getElementById('launcher-ui').style.display = 'none'; };
+
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight-110;
+    requestAnimationFrame(draw);
+</script>
+</body>
+</html>
